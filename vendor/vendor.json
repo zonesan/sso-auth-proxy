@@ -1,0 +1,19 @@
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"checksumSHA1": "SFyZRbcgdCFpvOrPYNv3UJ3rO4Q=",
+			"path": "github.com/gorilla/mux",
+			"revision": "ad4d7a5882b961e07e2626045eb995c022ac6664",
+			"revisionTime": "2015-10-03T07:26:51Z"
+		},
+		{
+			"checksumSHA1": "AqhUBWm7JCj44y1Fz7bdDWSqPq8=",
+			"path": "github.com/zonesan/clog",
+			"revision": "7ed8b0534d6ec80b31e21fbbfbe1e3363cc22cc7",
+			"revisionTime": "2016-10-09T07:53:50Z"
+		}
+	],
+	"rootPath": "github.com/asiainfoldp/sso-auth-proxy"
+}
