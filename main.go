@@ -19,7 +19,7 @@ func auth(req *http.Request) {
 	clog.Debug("TO DO sso check")
 }
 
-var ssoproxy = NewUpstreamProxy("http://localhost:8080")
+var ssoproxy = NewSsoProxy("http://localhost:8080")
 
 func main() {
 
