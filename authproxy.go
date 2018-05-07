@@ -90,16 +90,34 @@ func (p *SsoProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (p *SsoProxy) Proxy(rw http.ResponseWriter, req *http.Request) {
-	// status := p.Authenticate(rw, req)
-	// if status == http.StatusInternalServerError {
-	// 	p.ErrorPage(rw, http.StatusInternalServerError,
-	// 		"Internal Error", "Internal Error")
-	// } else if status == http.StatusForbidden {
-	// 	p.SsoStart(rw, req)
-	// } else {
-	// 	p.serveMux.ServeHTTP(rw, req)
-	// }
+	status := p.Authenticate(rw, req)
+	if status == http.StatusInternalServerError {
+		p.ErrorPage(rw, http.StatusInternalServerError,
+			"Internal Error", "Internal Error")
+	} else if status == http.StatusForbidden {
+		p.SsoStart(rw, req)
+	} else {
+		p.serveMux.ServeHTTP(rw, req)
+	}
 	p.serveMux.ServeHTTP(rw, req)
+}
+
+func (p *SsoProxy) Authenticate(rw http.ResponseWriter, req *http.Request) int {
+	clog.Error("TODO checking session/token, make/clear session etc.")
+	_, _ = rw, req
+	return http.StatusForbidden
+	// return http.StatusAccepted
+}
+
+func (p *SsoProxy) SsoStart(rw http.ResponseWriter, req *http.Request) {
+	clog.Error("TODO 302 to sso site.")
+
+	// http.Redirect(xxxx
+}
+
+func (p *SsoProxy) ErrorPage(rw http.ResponseWriter, status int, reason, msg string) {
+	_ = msg
+	http.Error(rw, reason, status)
 }
 
 // func (p *SsoProxy) SsoStart(rw http.ResponseWriter, req *http.Request) {
