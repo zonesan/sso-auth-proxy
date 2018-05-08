@@ -8,9 +8,9 @@ import (
 )
 
 func ssoHandler(w http.ResponseWriter, r *http.Request) {
-	clog.Debug("from", r.RemoteAddr, r.Method, r.URL.RequestURI(), r.Proto)
+	// clog.Debug("from", r.RemoteAddr, r.Method, r.URL.RequestURI(), r.Proto)
 
-	auth(r)
+	// auth(r)
 	ssoproxy.ServeHTTP(w, r)
 }
 

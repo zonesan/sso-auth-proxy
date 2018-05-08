@@ -2,11 +2,15 @@ package main
 
 import (
 	"crypto/tls"
-	"fmt"
+	"encoding/json"
+	"errors"
+	"io/ioutil"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/zonesan/clog"
 )
@@ -34,7 +38,7 @@ func NewUpstreamProxy(target string) *UpstreamProxy {
 			req.URL.RawQuery = upstreamQuery + "&" + req.URL.RawQuery
 		}
 
-		fmt.Printf("%#v\n", req.Header)
+		// fmt.Printf("%#v\n", req.Header)
 	}
 
 	if upstream.Scheme == "https" {
@@ -62,17 +66,19 @@ func NewUpstreamProxy(target string) *UpstreamProxy {
 func (u *UpstreamProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if u.wsHandler != nil && r.Header.Get("Connection") == "Upgrade" && r.Header.Get("Upgrade") == "websocket" {
-		clog.Debug("ws")
+		// clog.Debug("ws")
 		u.wsHandler.ServeHTTP(w, r)
 	} else {
-		clog.Debug("http")
+		// clog.Debug("http")
 		u.handler.ServeHTTP(w, r)
 	}
 
 }
 
 type SsoProxy struct {
-	serveMux http.Handler
+	serveMux     http.Handler
+	SsoStartPath string
+	AuthOnlyPath string
 }
 
 func NewSsoProxy(upstream string) *SsoProxy {
@@ -81,12 +87,137 @@ func NewSsoProxy(upstream string) *SsoProxy {
 	serveMux.Handle("/", proxy)
 
 	return &SsoProxy{
-		serveMux: serveMux,
+		serveMux:     serveMux,
+		SsoStartPath: "/ssostart",
+		AuthOnlyPath: "/auth",
 	}
 }
 
 func (p *SsoProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	p.Proxy(rw, req)
+
+	switch path := req.URL.Path; {
+	case path == p.SsoStartPath:
+		p.SsoStart(rw, req)
+	case path == p.AuthOnlyPath:
+		p.AuthOnly(rw, req)
+	default:
+		p.Proxy(rw, req)
+	}
+}
+
+func (p *SsoProxy) AuthOnly(rw http.ResponseWriter, req *http.Request) {
+	clog.Debugf("%#v", req.URL)
+	req.ParseForm()
+	token := req.FormValue("token")
+
+	if len(token) > 0 {
+		clog.Debug(token)
+		user, err := p.Redeem(token)
+		if err != nil {
+			clog.Error(err)
+			p.ErrorPage(rw, http.StatusInternalServerError,
+				"Internal Error", "Internal Error")
+		} else {
+			clog.Info("should use user account.", user.UserInfo.UserAccount)
+			http.SetCookie(rw, p.MakeSessionCookie(req, "skjdhwiuehassadwelqjfwefhask", time.Minute*30, time.Now()))
+			http.Redirect(rw, req, "/app/#/console/project/chaizs/dashboard", 302)
+		}
+	} else {
+		clog.Debug("token is empty")
+		http.Redirect(rw, req, p.SsoStartPath, 302)
+	}
+}
+
+func (p *SsoProxy) MakeSessionCookie(req *http.Request, value string, expiration time.Duration, now time.Time) *http.Cookie {
+	// if value != "" {
+	// 	value = cookie.SignedValue(fmt.Sprintf("%s%s", p.CookieSeed, req.Host), p.CookieName, value, now)
+	// 	if len(value) > 4096 {
+	// 		// Cookies cannot be larger than 4kb
+	// 		log.Printf("WARNING - Cookie Size: %d bytes", len(value))
+	// 	}
+	// }
+	return p.makeCookie(req, "df-sso-session-cookie", value, expiration, now)
+}
+
+func (p *SsoProxy) makeCookie(req *http.Request, name string, value string, expiration time.Duration, now time.Time) *http.Cookie {
+	domain := req.Host
+	if h, _, err := net.SplitHostPort(domain); err == nil {
+		domain = h
+	}
+	// if p.CookieDomain != "" {
+	// 	if !strings.HasSuffix(domain, p.CookieDomain) {
+	// 		log.Printf("Warning: request host is %q but using configured cookie domain of %q", domain, p.CookieDomain)
+	// 	}
+	// 	domain = p.CookieDomain
+	// }
+
+	return &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		Domain:   domain,
+		HttpOnly: true,
+		Secure:   false,
+		Expires:  now.Add(expiration),
+	}
+}
+
+type userinfo struct {
+	Username    string `json:"user_name"`
+	UserAccount string `json:"user_account"`
+	LoginTime   string `json:"login_time"`
+	Token       string `json:"token"`
+	Status      string `json:"status"`
+	Phone       string `json:"phone_num"`
+	JobTitle    string `json:"job_title"`
+	UserID      string `json:"user_id"`
+	StatCode    string `state_code`
+}
+type User struct {
+	Result    string   `json:"result"`
+	ResultMsg string   `json:"returnMsg"`
+	UserID    string   `json:"userId"`
+	UserInfo  userinfo `json:"userInfo"`
+}
+
+func (p *SsoProxy) Redeem(token string) (u *User, err error) {
+	if token == "" {
+		err = errors.New("missing token")
+		return
+	}
+
+	redeemUrl := "http://10.1.235.171:12005/dmc/ssoAuth?token=" + token
+	var req *http.Request
+	req, err = http.NewRequest("GET", redeemUrl, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	transCfg := &http.Transport{
+		DisableKeepAlives: true,
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{
+		Transport: transCfg,
+		// Timeout:   timeout,
+	}
+
+	var resp *http.Response
+	resp, err = client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	var body []byte
+	body, err = ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	// clog.Info(string(body))
+	user := &User{}
+	if err = json.Unmarshal(body, user); err != nil {
+		clog.Error(err)
+	}
+	return user, err
 }
 
 func (p *SsoProxy) Proxy(rw http.ResponseWriter, req *http.Request) {
@@ -99,20 +230,23 @@ func (p *SsoProxy) Proxy(rw http.ResponseWriter, req *http.Request) {
 	} else {
 		p.serveMux.ServeHTTP(rw, req)
 	}
-	p.serveMux.ServeHTTP(rw, req)
 }
 
 func (p *SsoProxy) Authenticate(rw http.ResponseWriter, req *http.Request) int {
-	clog.Error("TODO checking session/token, make/clear session etc.")
-	_, _ = rw, req
-	return http.StatusForbidden
-	// return http.StatusAccepted
+	// clog.Error("TODO checking session/token, make/clear session etc.")
+
+	clog.Error("TODO if no session, return forbidden to start sso.")
+
+	return http.StatusAccepted
 }
 
 func (p *SsoProxy) SsoStart(rw http.ResponseWriter, req *http.Request) {
-	clog.Error("TODO 302 to sso site.")
+	// clog.Error("TODO 302 to sso site.")
+	// authURL := "http://10.1.235.171:12005/dmc/dev/module/login/login.html?goto=http%3A%2F%2Flocalhost%3A9090%2Fapp%2F%23%2Fconsole%2Fproject%2Fchaizs%2Fdashboard"
+	authURL := "http://10.1.235.171:12005/dmc/dev/module/login/login.html?goto=http://localhost:9090/auth"
+	// clog.Debugf("%#v", req.URL)
 
-	// http.Redirect(xxxx
+	http.Redirect(rw, req, authURL, 302)
 }
 
 func (p *SsoProxy) ErrorPage(rw http.ResponseWriter, status int, reason, msg string) {
