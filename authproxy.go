@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asiainfoldp/sso-auth-proxy/cookie"
 	"github.com/zonesan/clog"
 )
 
@@ -79,6 +81,10 @@ type SsoProxy struct {
 	serveMux     http.Handler
 	SsoStartPath string
 	AuthOnlyPath string
+	CookieName   string
+	CookieSeed   string
+	CookieExpire time.Duration
+	CookieCipher *cookie.Cipher
 }
 
 func NewSsoProxy(upstream string) *SsoProxy {
@@ -86,10 +92,23 @@ func NewSsoProxy(upstream string) *SsoProxy {
 	proxy := NewUpstreamProxy(upstream)
 	serveMux.Handle("/", proxy)
 
+	var cipher *cookie.Cipher
+	// if opts.PassAccessToken || (opts.CookieRefresh != time.Duration(0)) {
+	// 	var err error
+	// 	cipher, err = cookie.NewCipher(secretBytes(opts.CookieSecret))
+	// 	if err != nil {
+	// 		log.Fatal("cookie-secret error: ", err)
+	// 	}
+	// }
+
 	return &SsoProxy{
 		serveMux:     serveMux,
 		SsoStartPath: "/ssostart",
 		AuthOnlyPath: "/auth",
+		CookieName:   "_datafoundry_sso_session",
+		CookieSeed:   "D474F0undrys4n",
+		CookieExpire: time.Minute * 30,
+		CookieCipher: cipher,
 	}
 }
 
@@ -119,7 +138,11 @@ func (p *SsoProxy) AuthOnly(rw http.ResponseWriter, req *http.Request) {
 				"Internal Error", "Internal Error")
 		} else {
 			clog.Info("should use user account.", user.UserInfo.UserAccount)
-			http.SetCookie(rw, p.MakeSessionCookie(req, "skjdhwiuehassadwelqjfwefhask", time.Minute*30, time.Now()))
+
+			session := &SessionState{User: user.UserInfo.UserAccount}
+			p.SaveSession(rw, req, session)
+
+			// http.SetCookie(rw, p.MakeSessionCookie(req, "skjdhwiuehassadwelqjfwefhask", time.Minute*30, time.Now()))
 			http.Redirect(rw, req, "/app/#/console/project/chaizs/dashboard", 302)
 		}
 	} else {
@@ -128,15 +151,32 @@ func (p *SsoProxy) AuthOnly(rw http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func (p *SsoProxy) SaveSession(rw http.ResponseWriter, req *http.Request, s *SessionState) error {
+	value, err := p.CookieForSession(s, p.CookieCipher)
+	if err != nil {
+		return err
+	}
+	p.SetSessionCookie(rw, req, value)
+	return nil
+}
+
+// CookieForSession serializes a session state for storage in a cookie
+func (p *SsoProxy) CookieForSession(s *SessionState, c *cookie.Cipher) (string, error) {
+	return s.EncodeSessionState(c)
+}
+func (p *SsoProxy) SetSessionCookie(rw http.ResponseWriter, req *http.Request, val string) {
+	http.SetCookie(rw, p.MakeSessionCookie(req, val, p.CookieExpire, time.Now()))
+}
+
 func (p *SsoProxy) MakeSessionCookie(req *http.Request, value string, expiration time.Duration, now time.Time) *http.Cookie {
-	// if value != "" {
-	// 	value = cookie.SignedValue(fmt.Sprintf("%s%s", p.CookieSeed, req.Host), p.CookieName, value, now)
-	// 	if len(value) > 4096 {
-	// 		// Cookies cannot be larger than 4kb
-	// 		log.Printf("WARNING - Cookie Size: %d bytes", len(value))
-	// 	}
-	// }
-	return p.makeCookie(req, "df-sso-session-cookie", value, expiration, now)
+	if value != "" {
+		value = cookie.SignedValue(fmt.Sprintf("%s%s", p.CookieSeed, req.Host), p.CookieName, value, now)
+		if len(value) > 4096 {
+			// Cookies cannot be larger than 4kb
+			clog.Warnf("WARNING - Cookie Size: %d bytes", len(value))
+		}
+	}
+	return p.makeCookie(req, p.CookieName, value, expiration, now)
 }
 
 func (p *SsoProxy) makeCookie(req *http.Request, name string, value string, expiration time.Duration, now time.Time) *http.Cookie {
