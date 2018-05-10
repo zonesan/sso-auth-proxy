@@ -9,17 +9,11 @@ import (
 
 func ssoHandler(w http.ResponseWriter, r *http.Request) {
 	// clog.Debug("from", r.RemoteAddr, r.Method, r.URL.RequestURI(), r.Proto)
-
-	// auth(r)
 	ssoproxy.ServeHTTP(w, r)
 }
 
-func auth(req *http.Request) {
-	req.Header.Add("X-test-Header", "dfproxy")
-	clog.Debug("TO DO sso check")
-}
-
-var ssoproxy = NewSsoProxy("http://localhost:8080")
+var ssoproxy *SsoProxy
+var loginBaseURL, redeemBaseURL string
 
 func main() {
 
@@ -35,4 +29,18 @@ func main() {
 
 	clog.Debug("listening on port 9090 ...")
 	clog.Fatal(http.ListenAndServe(":9090", router))
+}
+
+func init() {
+	// upstream := os.Getenv("SSO_UPSTREAM_URL")
+	// if len(upstream) == 0 {
+	// 	clog.Fatal("SSO_UPSTREAM_URL must be specified.")
+	// }
+	// target := makeAddr(upstream)
+
+	redeemBaseURL = makeAddrFromEnv("SSO_REDEEM_BASE_URL")
+	loginBaseURL = makeAddrFromEnv("SSO_LOGIN_BASE_URL")
+	upstream := makeAddrFromEnv("SSO_UPSTREAM_URL")
+	ssoproxy = NewSsoProxy(upstream)
+	clog.Info("Upstream target:", upstream)
 }
