@@ -9,7 +9,7 @@ import (
 )
 
 func setBaseURL(urlStr string) string {
-	// Make sure the given URL end with a slash
+	// Make sure the given URL end with no slash
 	if strings.HasSuffix(urlStr, "/") {
 		return setBaseURL(strings.TrimSuffix(urlStr, "/"))
 	}
@@ -17,7 +17,6 @@ func setBaseURL(urlStr string) string {
 }
 
 func httpsAddr(addr string) string {
-
 	if !strings.HasPrefix(strings.ToLower(addr), "http://") &&
 		!strings.HasPrefix(strings.ToLower(addr), "https://") {
 		return fmt.Sprintf("https://%s", addr)
@@ -27,12 +26,10 @@ func httpsAddr(addr string) string {
 }
 
 func httpAddr(addr string) string {
-
 	if !strings.HasPrefix(strings.ToLower(addr), "http://") &&
 		!strings.HasPrefix(strings.ToLower(addr), "https://") {
 		return fmt.Sprintf("http://%s", addr)
 	}
-
 	return setBaseURL(addr)
 }
 
@@ -48,6 +45,6 @@ func makeAddrFromEnv(env string) string {
 	if len(addr) == 0 {
 		clog.Fatal(env, "must be specified.")
 	}
-	clog.Debug(env, addr)
+	clog.Info(env, addr)
 	return makeAddr(addr)
 }

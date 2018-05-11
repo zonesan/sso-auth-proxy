@@ -79,6 +79,15 @@ func GetLogLevel() (level int) {
 	return logLevel
 }
 
+func GetLogLevelText() string {
+	for k, v := range logEnv {
+		if logLevel == v {
+			return k
+		}
+	}
+	return "unkown"
+}
+
 func SetLogFile(logfile string) {
 	f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
@@ -208,6 +217,12 @@ func Warnf(format string, a ...interface{}) (s string) {
 		s = KYEL + "[WARNING] " + KNRM + tracef() + fmt.Sprintf(format, a...)
 		log.Print(s)
 	}
+	return
+}
+
+func Print(a ...interface{}) (s string) {
+	s = KGRN + "[INFO] " + KNRM + tracef() + fmt.Sprintln(a...)
+	log.Print(s)
 	return
 }
 

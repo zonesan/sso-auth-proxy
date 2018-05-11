@@ -3,16 +3,22 @@
 	"ignore": "test",
 	"package": [
 		{
+			"checksumSHA1": "iIUYZyoanCQQTUaWsu8b+iOSPt4=",
+			"path": "github.com/gorilla/context",
+			"revision": "1c83b3eabd45b6d76072b66b746c20815fb2872d",
+			"revisionTime": "2015-08-20T05:12:45Z"
+		},
+		{
 			"checksumSHA1": "SFyZRbcgdCFpvOrPYNv3UJ3rO4Q=",
 			"path": "github.com/gorilla/mux",
 			"revision": "ad4d7a5882b961e07e2626045eb995c022ac6664",
 			"revisionTime": "2015-10-03T07:26:51Z"
 		},
 		{
-			"checksumSHA1": "AqhUBWm7JCj44y1Fz7bdDWSqPq8=",
+			"checksumSHA1": "A05Z2DjV1d6h1Zc3rxO4rEW3+KA=",
 			"path": "github.com/zonesan/clog",
-			"revision": "7ed8b0534d6ec80b31e21fbbfbe1e3363cc22cc7",
-			"revisionTime": "2016-10-09T07:53:50Z"
+			"revision": "5ccb47eb0a9a3d21a1584b26197067e08d566e92",
+			"revisionTime": "2018-05-11T08:34:37Z"
 		}
 	],
 	"rootPath": "github.com/asiainfoldp/sso-auth-proxy"

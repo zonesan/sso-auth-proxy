@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -105,11 +106,24 @@ func NewSsoProxy(upstream string) *SsoProxy {
 	// 	}
 	// }
 
+	rediredcturi := os.Getenv("SSO_REDIRECT_URI")
+	if len(rediredcturi) == 0 {
+		rediredcturi = "/"
+	}
+	clog.Info("using", rediredcturi, "as redirect uri path.")
+
+	proxyPrefix := os.Getenv("SSO_PROXY_PREFIX")
+	if len(proxyPrefix) == 0 {
+		proxyPrefix = "/sso"
+	}
+	clog.Info("using", proxyPrefix, "as proxy url prefix.")
+
 	return &SsoProxy{
-		serveMux:      serveMux,
-		SsoStartPath:  "/ssostart",
-		AuthOnlyPath:  "/auth",
-		redirectURI:   "/app/#/console/project/%s/dashboard",
+		serveMux:     serveMux,
+		SsoStartPath: fmt.Sprintf("%s/ssostart", proxyPrefix),
+		AuthOnlyPath: fmt.Sprintf("%s/auth", proxyPrefix),
+		// redirectURI:   "/app/#/console/project/%s/dashboard",
+		redirectURI:   rediredcturi,
 		CookieName:    "_datafoundry_sso_session",
 		CookieSeed:    "D474F0undrys4n",
 		CookieExpire:  time.Minute * 30,
@@ -126,6 +140,8 @@ func (p *SsoProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		p.SsoStart(rw, req)
 	case path == p.AuthOnlyPath:
 		p.AuthOnly(rw, req)
+	case p.IsWhitelistedRequest(req):
+		p.serveMux.ServeHTTP(rw, req)
 	default:
 		p.Proxy(rw, req)
 	}
@@ -141,22 +157,36 @@ func (p *SsoProxy) AuthOnly(rw http.ResponseWriter, req *http.Request) {
 		user, err := p.Redeem(token)
 		if err != nil {
 			clog.Error(err)
-			p.ErrorPage(rw, http.StatusInternalServerError,
-				"Internal Error", "Internal Error")
+			p.ErrorPage(rw, http.StatusUnauthorized, err.Error())
 		} else {
 			clog.Infof("user '%v' logged in.", user.UserInfo.UserAccount)
 
 			session := &SessionState{User: user.UserInfo.UserAccount}
 			p.SaveSession(rw, req, session)
 
-			// http.SetCookie(rw, p.MakeSessionCookie(req, "skjdhwiuehassadwelqjfwefhask", time.Minute*30, time.Now()))
-			redirectURI := fmt.Sprintf(p.redirectURI, user.UserInfo.UserAccount)
+			// redirectURI := fmt.Sprintf(p.redirectURI, user.UserInfo.UserAccount)
+			redirectURI := strings.Replace(p.redirectURI, "%s", user.UserInfo.UserAccount, -1)
 			http.Redirect(rw, req, redirectURI, 302)
 		}
 	} else {
 		clog.Debug("token is empty")
 		http.Redirect(rw, req, p.SsoStartPath, 302)
 	}
+}
+func (p *SsoProxy) IsWhitelistedRequest(req *http.Request) (ok bool) {
+	allowed := req.Method == "OPTIONS"
+	return allowed || p.IsWhitelistedPath(req.URL.Path)
+}
+
+func (p *SsoProxy) IsWhitelistedPath(path string) (ok bool) {
+	return false
+	// for _, u := range p.compiledSkipRegex {
+	// 	ok = u.MatchString(path)
+	// 	if ok {
+	// 		return
+	// 	}
+	// }
+	// return
 }
 
 func (p *SsoProxy) SaveSession(rw http.ResponseWriter, req *http.Request, s *SessionState) error {
@@ -233,6 +263,7 @@ type User struct {
 func (p *SsoProxy) Redeem(token string) (u *User, err error) {
 	if token == "" {
 		err = errors.New("missing token")
+		clog.Warn("missing token.")
 		return
 	}
 
@@ -265,10 +296,14 @@ func (p *SsoProxy) Redeem(token string) (u *User, err error) {
 	body, err = ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
-	clog.Debug(string(body), resp.StatusCode)
+	clog.Debug(resp.StatusCode, string(body))
 	user := &User{}
 	if err = json.Unmarshal(body, user); err != nil {
 		clog.Error(err)
+	}
+	if user.Result == "fail" {
+		user = nil
+		err = errors.New("authentication failed.")
 	}
 	return user, err
 }
@@ -277,7 +312,7 @@ func (p *SsoProxy) Proxy(rw http.ResponseWriter, req *http.Request) {
 	status := p.Authenticate(rw, req)
 	if status == http.StatusInternalServerError {
 		p.ErrorPage(rw, http.StatusInternalServerError,
-			"Internal Error", "Internal Error")
+			"Internal Error")
 	} else if status == http.StatusForbidden {
 		p.SsoStart(rw, req)
 	} else {
@@ -305,14 +340,12 @@ func (p *SsoProxy) ValidateSessionState(s *SessionState) bool {
 func (p *SsoProxy) Authenticate(rw http.ResponseWriter, req *http.Request) int {
 	// clog.Error("TODO checking session/token, make/clear session etc.")
 
-	// clog.Error("TODO if no session, return forbidden to start sso.")
-
 	var saveSession, clearSession, revalidated bool
 	remoteAddr := getRemoteAddr(req)
 
 	session, sessionAge, err := p.LoadCookiedSession(req)
 	if err != nil && err != http.ErrNoCookie {
-		clog.Infof("%s %s", remoteAddr, err)
+		clog.Warnf("%s %s", remoteAddr, err)
 	}
 	// clog.Debugf("%#v", session)
 
@@ -387,7 +420,7 @@ func (p *SsoProxy) LoadCookiedSession(req *http.Request) (*SessionState, time.Du
 	}
 	val, timestamp, ok := cookie.Validate(c, fmt.Sprintf("%s%s", p.CookieSeed, req.Host), p.CookieExpire)
 	if !ok {
-		return nil, age, errors.New("Cookie Signature not valid")
+		return nil, age, errors.New("Cookie Signature not valid (" + c.Value + ")")
 	}
 
 	session, err := p.SessionFromCookie(val, p.CookieCipher)
@@ -417,7 +450,6 @@ func (p *SsoProxy) SsoStart(rw http.ResponseWriter, req *http.Request) {
 	http.Redirect(rw, req, authURL, 302)
 }
 
-func (p *SsoProxy) ErrorPage(rw http.ResponseWriter, status int, reason, msg string) {
-	_ = msg
+func (p *SsoProxy) ErrorPage(rw http.ResponseWriter, status int, reason string) {
 	http.Error(rw, reason, status)
 }

@@ -1,0 +1,17 @@
+FROM golang:latest as builder
+MAINTAINER Zonesan <chaizs@asiainfo.com>
+COPY . /go/src/github.com/asiainfoldp/sso-auth-proxy
+WORKDIR /go/src/github.com/asiainfoldp/sso-auth-proxy
+RUN go build -o sso-proxy
+
+FROM alpine
+ENV TIME_ZONE=Asia/Shanghai
+RUN mkdir /lib64 && ln -s /lib/libc.musl-x86_64.so.1 /lib64/ld-linux-x86-64.so.2 && \
+    ln -snf /usr/share/zoneinfo/$TIME_ZONE /etc/localtime && echo $TIME_ZONE > /etc/timezone
+
+COPY --from=builder /go/src/github.com/asiainfoldp/sso-auth-proxy/sso-proxy /sso-proxy
+
+EXPOSE 9090
+
+CMD ["/sso-proxy"]
+

@@ -50,7 +50,7 @@ func singleJoiningSlash(a, b string) string {
 	return a + b
 }
 
-// NewSingleHostReverseProxy returns a new websocket ReverseProxy. The path
+// NewSingleHostWsReverseProxy returns a new websocket ReverseProxy. The path
 // rewrites follow the same rules as the httputil.ReverseProxy. If the target
 // url has the path '/foo' and the incoming request '/bar', the request path
 // will be updated to '/foo/bar' before forwarding.
